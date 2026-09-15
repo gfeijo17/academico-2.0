@@ -1,206 +1,139 @@
 import os
-import io
-import datetime
 import requests
+import datetime
 import streamlit as st
 from google import genai
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
+from google.genai import types
 
-st.set_page_config(page_title="Pesquisador Acadêmico & NotebookLM", page_icon="🎓", layout="wide")
+st.set_page_config(page_title="Pesquisador Acadêmico & Gemini", page_icon="🎓", layout="wide")
 
-st.title("🎓 Pesquisador Acadêmico com Google Drive & Gemini Notebook")
-st.markdown("Busque no Google Acadêmico em português, salve os PDFs no Google Drive, adicione ao seu Notebook de pesquisa e gere um roteiro de podcast automaticamente.")
+st.title("🎓 Pesquisador Acadêmico & Gerador de Podcast")
+st.markdown("Busca 5 artigos em português no Google Acadêmico via Gemini, disponibiliza o download dos PDFs e gera o roteiro de podcast automaticamente.")
 
 # ==============================================================================
-# CONFIGURAÇÕES E CHAVES
+# CHAVE DE API DO GEMINI
 # ==============================================================================
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "").strip()
-SERPER_API_KEY = st.secrets.get("SERPER_API_KEY", "").strip()
 
-# Configurações do Google Drive (Necessário Token OAuth ou Service Account)
-GOOGLE_DRIVE_TOKEN = st.secrets.get("GOOGLE_DRIVE_TOKEN", None)
-
-# --- FUNÇÃO 1: BUSCA GOOGLE SCHOLAR (PORTUGUÊS - 5 RESULTADOS) ---
-def buscar_scholar_pt(query, api_key, num_results=5):
-    """Busca 5 artigos em português no Google Acadêmico via Serper."""
-    url = "https://google.serper.dev/scholar"
-    payload = {
-        "q": query,
-        "gl": "br",
-        "hl": "pt-br",
-        "lr": "lang_pt",
-        "num": num_results
-    }
-    headers = {'X-API-KEY': api_key, 'Content-Type': 'application/json'}
-    
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=15)
-        if response.status_code == 200:
-            results = response.json().get('organic', [])[:num_results]
-            artigos = []
-            for r in results:
-                pdf_url = None
-                # Busca por link direto para PDF nas fontes
-                if 'resources' in r and isinstance(r['resources'], list):
-                    for res in r['resources']:
-                        if res.get('link', '').lower().endswith('.pdf') or 'pdf' in res.get('title', '').lower():
-                            pdf_url = res.get('link')
-                            break
-                if not pdf_url and r.get('link', '').lower().endswith('.pdf'):
-                    pdf_url = r.get('link')
-
-                artigos.append({
-                    "title": r.get('title', 'Sem título'),
-                    "link": r.get('link', '#'),
-                    "snippet": r.get('snippet', 'Sem resumo disponível.'),
-                    "publication": r.get('publicationInfo', 'Fonte não informada'),
-                    "pdf_link": pdf_url
-                })
-            return artigos
-        else:
-            st.error(f"Erro Serper: {response.status_code}")
-            return []
-    except Exception as e:
-        st.error(f"Erro de conexão: {e}")
-        return []
-
-# --- FUNÇÃO 2: DOWNLOAD DO PDF ---
+# --- FUNÇÃO DE DOWNLOAD DO PDF ---
+@st.cache_data(show_spinner=False)
 def baixar_pdf(url):
-    """Baixa o conteúdo em bytes de um link PDF."""
+    """Tenta baixar o PDF para disponibilizar o botão no Streamlit."""
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        res = requests.get(url, headers=headers, timeout=15)
-        if res.status_code == 200 and 'pdf' in res.headers.get('Content-Type', '').lower():
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        res = requests.get(url, headers=headers, timeout=10, allow_redirects=True)
+        if res.status_code == 200:
             return res.content
     except Exception:
         pass
     return None
 
-# --- FUNÇÃO 3: CRIAR PASTA E FAZER UPLOAD NO GOOGLE DRIVE ---
-def salvar_no_google_drive(nome_pesquisa, arquivos_pdf):
-    """Cria pasta 'nome-da-pesquisa_DD/MM/AAAA' e salva os PDFs."""
-    if not GOOGLE_DRIVE_TOKEN:
-        st.warning("⚠️ Token do Google Drive não configurado nos Secrets. Pulando etapa do Drive.")
-        return None
+# --- ENTRADA DO USUÁRIO ---
+termo_busca = st.text_input("Qual o tema da pesquisa acadêmica?", placeholder="Ex: inteligência artificial na educação")
 
-    try:
-        creds = Credentials.from_authorized_user_info(GOOGLE_DRIVE_TOKEN)
-        service = build('drive', 'v3', credentials=creds)
-
-        data_atual = datetime.datetime.now().strftime("%d-%m-%Y")
-        nome_pasta = f"{nome_pesquisa}_{data_atual}"
-
-        # Criar a pasta no Drive
-        folder_metadata = {
-            'name': nome_pasta,
-            'mimeType': 'application/vnd.google-apps.folder'
-        }
-        folder = service.files().create(body=folder_metadata, fields='id').execute()
-        folder_id = folder.get('id')
-
-        # Upload dos PDFs
-        for pdf in arquivos_pdf:
-            file_metadata = {
-                'name': pdf['filename'],
-                'parents': [folder_id]
-            }
-            media = MediaIoBaseUpload(io.BytesIO(pdf['bytes']), mimetype='application/pdf')
-            service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-
-        return folder_id
-    except Exception as e:
-        st.error(f"Erro ao salvar no Google Drive: {e}")
-        return None
-
-# --- INTERFACE PRINCIPAL ---
-termo_busca = st.text_input("Digite o tema da pesquisa acadêmica:", placeholder="Ex: inteligência artificial na educação")
-
-if st.button("Executar Pesquisa e Fluxo de Trabalho", type="primary"):
+if st.button("Executar Pesquisa e Gerar Podcast", type="primary"):
     if not termo_busca:
-        st.warning("Por favor, digite um tema.")
+        st.warning("Por favor, digite um tema para pesquisar.")
+    elif not GEMINI_API_KEY:
+        st.error("Configure a GEMINI_API_KEY nos Secrets do Streamlit Cloud.")
     else:
         st.markdown("---")
-        
-        # PASSO 1: Pesquisar no Google Acadêmico
-        with st.spinner("1/4 - Pesquisando artigos no Google Acadêmico em português..."):
-            artigos = buscar_scholar_pt(termo_busca, SERPER_API_KEY, num_results=5)
+        client = genai.Client(api_key=GEMINI_API_KEY)
+
+        # PASSO 1: Busca Nativa no Google Acadêmico via Gemini (Sem Serper)
+        with st.spinner("1/2 - Buscando os 5 principais artigos científicos em português..."):
+            prompt_busca = f"""
+            Pesquise no Google Acadêmico exatamente 5 artigos científicos e produções acadêmicas em PORTUGUÊS (Brasil) sobre o tema: "{termo_busca}".
             
-        if not artigos:
-            st.error("Nenhum artigo encontrado. Verifique a chave da API do Serper.")
-        else:
-            st.success(f"Encontrados {len(artigos)} artigos acadêmicos.")
-            
-            # Exibir os 5 resultados e URLs acessíveis
-            st.subheader("📚 Artigos Selecionados:")
-            for i, art in enumerate(artigos, 1):
-                st.markdown(f"**{i}. {art['title']}**")
-                st.write(f"🔗 **URL Principal:** [{art['link']}]({art['link']})")
-                if art['pdf_link']:
-                    st.write(f"📄 **PDF Direto:** [{art['pdf_link']}]({art['pdf_link']})")
-                else:
-                    st.write("⚠️ *PDF direto não detectado na busca.*")
-                st.caption(f"Publicação: {art['publication']}")
-                st.write("---")
+            Para cada artigo encontrado, apresente:
+            1. Título do Artigo
+            2. Publicação / Revista / Instituição
+            3. Breve Resumo das descobertas principais
+            4. Link/URL direto para o arquivo .pdf ou acesso ao artigo em repositórios (como SciELO, Google Scholar, universidades .br).
+            """
 
-            # PASSO 2: Download dos PDFs
-            with st.spinner("2/4 - Baixando os arquivos PDF disponíveis..."):
-                pdfs_baixados = []
-                for i, art in enumerate(artigos, 1):
-                    url_target = art['pdf_link'] or art['link']
-                    pdf_bytes = baixar_pdf(url_target)
-                    if pdf_bytes:
-                        nome_arquivo = f"Artigo_{i}_{termo_busca.replace(' ', '_')}.pdf"
-                        pdfs_baixados.append({"filename": nome_arquivo, "bytes": pdf_bytes, "title": art['title'], "snippet": art['snippet']})
-
-            st.info(f"{len(pdfs_baixados)} de 5 PDFs baixados com sucesso.")
-
-            # PASSO 3: Criar Pasta e Salvar no Google Drive
-            with st.spinner("3/4 - Criando pasta e salvando arquivos no Google Drive..."):
-                drive_folder_id = salvar_no_google_drive(termo_busca, pdfs_baixados)
-                if drive_folder_id:
-                    st.success(f"📁 Pasta criada no Google Drive com sucesso!")
-
-            # PASSO 4: Criar Roteiro de Podcast via Gemini API
-            with st.spinner("4/4 - Processando o conteúdo das fontes e gerando o Roteiro do Podcast..."):
-                try:
-                    client = genai.Client(api_key=GEMINI_API_KEY)
-
-                    # Consolidação do texto dos 5 artigos/PDFs
-                    contexto_fontes = ""
-                    for pdf in pdfs_baixados:
-                        contexto_fontes += f"\n\n--- ARTIGO: {pdf['title']} ---\n{pdf['snippet']}"
-
-                    prompt_podcast = f"""
-                    Você é um roteirista profissional de podcasts científicos e educacionais.
-                    Com base no conteúdo dos 5 artigos científicos pesquisados sobre o tema "{termo_busca}":
-
-                    FONTES DOS ARTIGOS:
-                    {contexto_fontes}
-
-                    Crie um ROTEIRO COMPLETO DE PODCAST de resumo (Audio Overview) entre dois apresentadores:
-                    - **Apresentador 1 (Anfitrião):** Conduz a conversa de forma dinâmica e faz perguntas instigantes.
-                    - **Apresentador 2 (Especialista):** Explica os conceitos acadêmicos e descobertas dos 5 artigos de forma didática.
-
-                    Mantenha a conversa natural, em português do Brasil, destacando os pontos em comum e descobertas principais dos artigos baixados.
-                    """
-
-                    response = client.models.generate_content(
-                        model="gemini-2.5-flash",
-                        contents=prompt_podcast
+            try:
+                # Usa a busca nativa do Google integrada ao Gemini
+                response_busca = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=prompt_busca,
+                    config=types.GenerateContentConfig(
+                        tools=[types.Tool(google_search=types.GoogleSearch())]
                     )
+                )
 
-                    st.subheader("🎙️ Roteiro do Podcast Gerado")
-                    st.markdown(response.text)
+                st.subheader("📚 5 Artigos Acadêmicos Encontrados:")
+                st.markdown(response_busca.text)
 
-                    # Opção de Download do Roteiro
-                    st.download_button(
-                        label="📥 Baixar Roteiro (.txt)",
-                        data=response.text,
-                        file_name=f"roteiro_podcast_{termo_busca.replace(' ', '_')}.txt",
-                        mime="text/plain"
-                    )
+                # Extrai links de fontes da busca
+                urls_encontradas = []
+                if response_busca.candidates and response_busca.candidates[0].grounding_metadata:
+                    metadata = response_busca.candidates[0].grounding_metadata
+                    if hasattr(metadata, 'grounding_chunks') and metadata.grounding_chunks:
+                        for chunk in metadata.grounding_chunks:
+                            if hasattr(chunk, 'web') and chunk.web and chunk.web.uri:
+                                urls_encontradas.append(chunk.web.uri)
 
-                except Exception as e:
-                    st.error(f"Erro ao gerar o roteiro com a API do Gemini: {e}")
+                urls_encontradas = list(dict.fromkeys(urls_encontradas))[:5]
+
+                # Exibe botões para download dos PDFs encontrados
+                if urls_encontradas:
+                    st.write("---")
+                    st.subheader("📄 Downloads dos PDFs Acessíveis:")
+                    for idx, url in enumerate(urls_encontradas, 1):
+                        pdf_bytes = baixar_pdf(url)
+                        col_link, col_down = st.columns([0.7, 0.3])
+                        with col_link:
+                            st.write(f"**{idx}.** [{url}]({url})")
+                        with col_down:
+                            if pdf_bytes:
+                                st.download_button(
+                                    label="📄 Baixar PDF",
+                                    data=pdf_bytes,
+                                    file_name=f"artigo_{idx}_{termo_busca.replace(' ', '_')}.pdf",
+                                    mime="application/pdf",
+                                    key=f"down_{idx}"
+                                )
+                            else:
+                                st.caption("Download direto bloqueado pelo site")
+
+            except Exception as e:
+                st.error(f"Erro ao realizar a busca com o Gemini: {e}")
+                st.stop()
+
+        # PASSO 2: Geração do Roteiro de Podcast (Audio Overview)
+        with st.spinner("2/2 - Gerando o Roteiro do Podcast..."):
+            try:
+                prompt_podcast = f"""
+                Você é um roteirista de podcasts acadêmicos e educacionais.
+                Com base no conteúdo dos 5 artigos científicos pesquisados sobre "{termo_busca}":
+
+                RESUMO DOS ARTIGOS:
+                {response_busca.text}
+
+                Crie um ROTEIRO COMPLETO DE PODCAST (estilo Audio Overview / NotebookLM) entre 2 apresentadores:
+                - **Apresentador A (Anfitrião):** Conduz a conversa de forma entusiasmada, faz perguntas reflexivas e liga os temas.
+                - **Apresentador B (Especialista):** Explica os resultados, métodos e conclusões dos artigos científicos de forma simples e didática.
+
+                Escreva em português do Brasil, mantendo uma conversa natural, fluida e envolvente.
+                """
+
+                response_podcast = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=prompt_podcast
+                )
+
+                st.markdown("---")
+                st.subheader("🎙️ Roteiro de Podcast Gerado")
+                st.markdown(response_podcast.text)
+
+                # Download do Roteiro em TXT
+                st.download_button(
+                    label="📥 Baixar Roteiro do Podcast (.txt)",
+                    data=response_podcast.text,
+                    file_name=f"roteiro_podcast_{termo_busca.replace(' ', '_')}.txt",
+                    mime="text/plain"
+                )
+
+            except Exception as e:
+                st.error(f"Erro ao gerar o roteiro do podcast: {e}")
