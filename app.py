@@ -75,10 +75,28 @@ st.write("Pesquisa de teses e dissertações de pós-graduação ordenadas das m
 # Campo de entrada com o destaque em degradê
 tema = st.text_input("Digite o tema desejado:", placeholder="Ex: aprendizagem motora educação física")
 
-# Filtro de tipo de documento
-tipo_trabalho = st.selectbox(
-    "Filtrar por tipo de documento:",
-    options=["Todos", "Dissertações de Mestrado", "Teses de Doutorado"]
+# Controles de filtro em colunas paralelas
+col_filtro, col_qtd = st.columns([2, 1])
+
+with col_filtro:
+    tipo_trabalho = st.selectbox(
+        "Tipo de documento:",
+        options=["Todos", "Dissertações de Mestrado", "Teses de Doutorado"]
+    )
+
+with col_qtd:
+    limite_resultados = st.select_slider(
+        "Quantidade de resultados:",
+        options=[10, 20, 30, 50],
+        value=20
+    )
+
+# Filtro de Intervalo de Anos
+ano_inicial, ano_final = st.slider(
+    "Intervalo de anos da publicação:",
+    min_value=1990,
+    max_value=2026,
+    value=(2010, 2026)
 )
 
 if st.button("Buscar Trabalhos"):
@@ -95,8 +113,12 @@ if st.button("Buscar Trabalhos"):
 
                 query_encoded = urllib.parse.quote(termo_busca)
                 
-                # API oficial da BDTD
-                url = f"https://bdtd.ibict.br/vufind/api/v1/search?lookfor={query_encoded}&sort=publishDate+desc&limit=10"
+                # API da BDTD com parâmetros de intervalo de ano e limite dinâmico
+                url = (
+                    f"https://bdtd.ibict.br/vufind/api/v1/search?"
+                    f"lookfor={query_encoded}&sort=publishDate+desc&limit={limite_resultados}"
+                    f"&daterange[]=publishDate&publishDatefrom={ano_inicial}&publishDateto={ano_final}"
+                )
                 
                 response = requests.get(url, timeout=12)
                 
@@ -106,9 +128,9 @@ if st.button("Buscar Trabalhos"):
                     total = data.get("resultCount", 0)
 
                     if not registros:
-                        st.info("Nenhuma tese ou dissertação encontrada para este tema.")
+                        st.info("Nenhuma tese ou dissertação encontrada para este tema no período selecionado.")
                     else:
-                        st.success(f"Encontrados {total} resultados. Exibindo os 10 mais recentes:")
+                        st.success(f"Encontrados {total} resultados ({ano_inicial}-{ano_final}). Exibindo os {len(registros)} mais recentes:")
 
                         for i, trabalho in enumerate(registros, start=1):
                             titulo = trabalho.get("title", "Título indisponível")
@@ -135,7 +157,7 @@ if st.button("Buscar Trabalhos"):
                             # Exibição do Card
                             with st.container():
                                 st.markdown(f"### {i}. [{titulo}]({link_direto})")
-                                st.caption(f"📅 **Ano:** {ano} | 👤 **Autor:** {autores} | 🏛️ **Instituição:** {instituicao}")
+                                st.caption(f"📅 **Ano:** {ano} | 👤 **Autor:** {autores} | 🏛️️ **Instituição:** {instituicao}")
                                 
                                 st.link_button("🔗 Acessar Documento", link_direto)
                                 st.divider()
