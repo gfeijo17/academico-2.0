@@ -113,7 +113,7 @@ if st.button("Buscar Trabalhos"):
 
                 query_encoded = urllib.parse.quote(termo_busca)
                 
-                # API da BDTD com parâmetros de intervalo de ano e limite dinâmico
+                # API da BDTD
                 url = (
                     f"https://bdtd.ibict.br/vufind/api/v1/search?"
                     f"lookfor={query_encoded}&sort=publishDate+desc&limit={limite_resultados}"
@@ -147,9 +147,9 @@ if st.button("Buscar Trabalhos"):
                             instituicao_raw = trabalho.get("institutions", ["Instituição não informada"])
                             instituicao = instituicao_raw[0] if instituicao_raw else ""
 
-                            # Links
+                            # Links correlatos
                             id_trabalho = trabalho.get("id")
-                            link_bdtd = f"https://bdtd.ibict.br/vufind/Record/{id_trabalho}" if id_trabalho else "#"
+                            link_bdtd = f"https://bdtd.ibict.br/vufind/Record/{id_trabalho}" if id_trabalho else None
                             
                             urls = trabalho.get("urls", [])
                             link_direto = urls[0].get("url") if urls else link_bdtd
@@ -157,9 +157,17 @@ if st.button("Buscar Trabalhos"):
                             # Exibição do Card
                             with st.container():
                                 st.markdown(f"### {i}. [{titulo}]({link_direto})")
-                                st.caption(f"📅 **Ano:** {ano} | 👤 **Autor:** {autores} | 🏛️️ **Instituição:** {instituicao}")
+                                st.caption(f"📅 **Ano:** {ano} | 👤 **Autor:** {autores} | 🏛️ **Instituição:** {instituicao}")
                                 
-                                st.link_button("🔗 Acessar Documento", link_direto)
+                                # Botões de acesso aos materiais correlatos
+                                c1, c2 = st.columns(2)
+                                with c1:
+                                    if link_direto:
+                                        st.link_button("🔗 Abrir Repositório / PDF", link_direto, use_container_width=True)
+                                with c2:
+                                    if link_bdtd:
+                                        st.link_button("🏛️ Ver Registro na BDTD", link_bdtd, use_container_width=True)
+                                
                                 st.divider()
                 else:
                     st.error("Servidor da BDTD indisponível no momento.")
