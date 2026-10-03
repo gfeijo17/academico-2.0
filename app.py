@@ -95,12 +95,18 @@ st.markdown(
         color: #ffffff !important;
         box-shadow: 0 4px 8px rgba(0,0,0,0.15) !important;
     }
+
+    /* Ajuste para alinhar verticalmente o botão PDF com o expander do resumo */
+    div[data-testid="stColumn"] {
+        display: flex;
+        align-items: flex-start;
+    }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# --- CABEÇALHO COM BOTÃO "NOVA PESQUISA" QUE RESETA OS FILTROS ---
+# --- CABEÇALHO COM BOTÃO "NOVA PESQUISA" ---
 col_top_left, col_top_right = st.columns([1, 3])
 
 with col_top_left:
@@ -189,7 +195,7 @@ if st.button("Buscar Trabalhos", use_container_width=True):
                             instituicao_raw = trabalho.get("institutions", ["Instituição não informada"])
                             instituicao = instituicao_raw[0] if instituicao_raw else ""
 
-                            # Resumo (summary)
+                            # Resumo
                             resumo_raw = trabalho.get("summary", [])
                             if isinstance(resumo_raw, list) and resumo_raw:
                                 resumo = resumo_raw[0]
@@ -198,27 +204,45 @@ if st.button("Buscar Trabalhos", use_container_width=True):
                             else:
                                 resumo = "Resumo não disponibilizado no registro."
 
-                            # Links correlatos
+                            # Links
                             id_trabalho = trabalho.get("id")
                             link_bdtd = f"https://bdtd.ibict.br/vufind/Record/{id_trabalho}" if id_trabalho else None
                             
                             urls = trabalho.get("urls", [])
-                            link_direto = urls[0].get("url") if urls else link_bdtd
+                            link_repositorio = urls[0].get("url") if urls else link_bdtd
+
+                            # Identifica URL direta do arquivo PDF se disponível
+                            link_pdf = None
+                            for u in urls:
+                                u_str = u.get("url", "")
+                                if u_str.lower().endswith(".pdf") or "pdf" in u_str.lower():
+                                    link_pdf = u_str
+                                    break
+                            
+                            # Caso não haja URL explícita com extensão .pdf, usa o repositório como fallback
+                            if not link_pdf:
+                                link_pdf = link_repositorio
 
                             # Exibição do Card
                             with st.container():
-                                st.markdown(f"### {i}. [{titulo}]({link_direto})")
+                                st.markdown(f"### {i}. [{titulo}]({link_repositorio})")
                                 st.caption(f"📅 **Ano:** {ano} | 👤 **Autor:** {autores} | 🏛️ **Instituição:** {instituicao}")
                                 
-                                # Bloco expandível com o resumo
-                                with st.expander("📝 Ler resumo"):
-                                    st.write(resumo)
+                                # Linha do Resumo com o botão de PDF integrado
+                                # A proporção [3.2, 1] garante que o botão fique perfeitamente alinhado na extremidade direita
+                                c_resumo, c_pdf = st.columns([3.2, 1])
+                                with c_resumo:
+                                    with st.expander("📝 Ler resumo"):
+                                        st.write(resumo)
+                                with c_pdf:
+                                    if link_pdf:
+                                        st.link_button("📄 PDF", link_pdf, use_container_width=True)
 
-                                # Botões de acesso aos materiais correlatos
+                                # Botões de acesso aos materiais na parte inferior
                                 c1, c2 = st.columns(2)
                                 with c1:
-                                    if link_direto:
-                                        st.link_button("🔗 Abrir Repositório / PDF", link_direto, use_container_width=True)
+                                    if link_repositorio:
+                                        st.link_button("🔗 Abrir Repositório", link_repositorio, use_container_width=True)
                                 with c2:
                                     if link_bdtd:
                                         st.link_button("🏛️ Ver Registro na BDTD", link_bdtd, use_container_width=True)
