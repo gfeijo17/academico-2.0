@@ -1,6 +1,8 @@
 import datetime
+import re
 import requests
 import urllib.parse
+import pandas as pd
 import streamlit as st
 
 st.set_page_config(page_title="Buscador", page_icon="🎓", layout="centered")
@@ -9,6 +11,7 @@ st.set_page_config(page_title="Buscador", page_icon="🎓", layout="centered")
 ANO_ATUAL = datetime.datetime.now().year
 ANO_15_ANOS_ATRAS = ANO_ATUAL - 15
 
+# Inicialização do Session State
 if "tema_input" not in st.session_state:
     st.session_state["tema_input"] = ""
 if "tipo_trabalho_input" not in st.session_state:
@@ -24,6 +27,16 @@ def reset_campos():
     st.session_state["tipo_trabalho_input"] = "Todos"
     st.session_state["limite_input"] = 20
     st.session_state["anos_input"] = (ANO_15_ANOS_ATRAS, ANO_ATUAL)
+
+def destacar_termo(texto, termo):
+    """Destaca os termos da busca em negrito dentro do texto."""
+    if not termo or not texto:
+        return texto
+    palavras = [re.escape(p) for p in termo.strip().split() if len(p) > 2]
+    if not palavras:
+        return texto
+    padrao = re.compile(r'(' + '|'.join(palavras) + r')', re.IGNORECASE)
+    return padrao.sub(r'**\1**', texto)
 
 # --- ESTILIZAÇÃO E CUSTOMIZAÇÃO CSS ---
 st.markdown(
@@ -43,7 +56,7 @@ st.markdown(
         font-size: 38px;
         font-weight: 900;
         font-family: 'Arial Black', sans-serif;
-        color: rgba(60, 90, 65, 0.15);
+        color: rgba(60, 90, 65, 0.18);
         letter-spacing: 3px;
         z-index: 9999;
         pointer-events: none;
@@ -74,6 +87,7 @@ st.markdown(
     /* Padronização Unificada de Todos os Botões */
     div.stButton > button,
     div[data-testid="stLinkButton"] > a,
+    div[data-testid="stDownloadButton"] > button,
     a[data-testid="stBaseButton-secondary"] {
         background-color: #3b5e43 !important;
         color: #ffffff !important;
@@ -88,6 +102,7 @@ st.markdown(
     /* Efeito de Hover em Todos os Botões */
     div.stButton > button:hover,
     div[data-testid="stLinkButton"] > a:hover,
+    div[data-testid="stDownloadButton"] > button:hover,
     a[data-testid="stBaseButton-secondary"]:hover {
         background-color: #2c4732 !important;
         border-color: #2c4732 !important;
@@ -104,7 +119,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# --- CABEÇALHO COM BOTÃO "NOVA PESQUISA" ---
+# --- CABEÇALHO COM BOTÃO "NOVA PESQUISA" NO CANTO SUPERIOR ESQUERDO ---
 col_top_left, col_top_right = st.columns([1, 3])
 
 with col_top_left:
@@ -113,36 +128,41 @@ with col_top_left:
 st.title("Buscador")
 st.write("Pesquisa de teses e dissertações de pós-graduação ordenadas das mais recentes às mais antigas.")
 
-tema = st.text_input(
-    "Digite o tema desejado:",
-    placeholder="Ex: aprendizagem motora educação física",
-    key="tema_input"
-)
-
-col_filtro, col_qtd = st.columns([2, 1])
-
-with col_filtro:
-    tipo_trabalho = st.selectbox(
-        "Tipo de documento:",
-        options=["Todos", "Dissertações de Mestrado", "Teses de Doutorado"],
-        key="tipo_trabalho_input"
+# --- FORMULÁRIO DE PESQUISA (PERMITE SUBMIT COM ENTER) ---
+with st.form(key="search_form"):
+    tema = st.text_input(
+        "Digite o tema desejado:",
+        placeholder="Ex: aprendizagem motora educação física",
+        key="tema_input"
     )
 
-with col_qtd:
-    limite_resultados = st.select_slider(
-        "Quantidade de resultados:",
-        options=[10, 20, 30, 50],
-        key="limite_input"
+    col_filtro, col_qtd = st.columns([2, 1])
+
+    with col_filtro:
+        tipo_trabalho = st.selectbox(
+            "Tipo de documento:",
+            options=["Todos", "Dissertações de Mestrado", "Teses de Doutorado"],
+            key="tipo_trabalho_input"
+        )
+
+    with col_qtd:
+        limite_resultados = st.select_slider(
+            "Quantidade de resultados:",
+            options=[10, 20, 30, 50],
+            key="limite_input"
+        )
+
+    ano_inicial, ano_final = st.slider(
+        "Intervalo de anos da publicação:",
+        min_value=1990,
+        max_value=ANO_ATUAL,
+        key="anos_input"
     )
 
-ano_inicial, ano_final = st.slider(
-    "Intervalo de anos da publicação:",
-    min_value=1990,
-    max_value=ANO_ATUAL,
-    key="anos_input"
-)
+    buscar_btn = st.form_submit_button("Buscar Trabalhos", use_container_width=True)
 
-if st.button("Buscar Trabalhos", use_container_width=True):
+# --- EXECUÇÃO DA BUSCA ---
+if buscar_btn:
     if not tema.strip():
         st.warning("Por favor, digite um tema.")
     else:
@@ -173,6 +193,9 @@ if st.button("Buscar Trabalhos", use_container_width=True):
                         st.info("Nenhuma tese ou dissertação encontrada para este tema no período selecionado.")
                     else:
                         st.success(f"Encontrados {total} resultados ({ano_inicial}-{ano_final}). Exibindo os {len(registros)} mais recentes:")
+
+                        # Preparação dos dados para exportação CSV
+                        dados_exportacao = []
 
                         for i, trabalho in enumerate(registros, start=1):
                             titulo = trabalho.get("title", "Título indisponível")
@@ -213,18 +236,43 @@ if st.button("Buscar Trabalhos", use_container_width=True):
                             if not link_pdf:
                                 link_pdf = link_repositorio
 
+                            # Identificação de Mestrado ou Doutorado
+                            tag_tipo = "🎓 Doutorado" if "doutor" in titulo.lower() or "tese" in titulo.lower() else "📜 Mestrado"
+
+                            # Citação ABNT
+                            citacao_abnt = f"{autores.upper()}. **{titulo}**. {ano}. {instituicao}."
+
+                            # Adiciona à lista de exportação
+                            dados_exportacao.append({
+                                "Título": titulo,
+                                "Autor": autores,
+                                "Ano": ano,
+                                "Instituição": instituicao,
+                                "Resumo": resumo,
+                                "Link Repositório": link_repositorio,
+                                "Link PDF": link_pdf,
+                                "Link BDTD": link_bdtd
+                            })
+
+                            # --- EXIBIÇÃO DO CARD ---
                             with st.container():
                                 st.markdown(f"### {i}. [{titulo}]({link_repositorio})")
-                                st.caption(f"📅 **Ano:** {ano} | 👤 **Autor:** {autores} | 🏛️ **Instituição:** {instituicao}")
+                                st.caption(f"{tag_tipo} | 📅 **Ano:** {ano} | 👤 **Autor:** {autores} | 🏛️ **Instituição:** {instituicao}")
                                 
+                                # Resumo com destaque de palavras-chave e botão de PDF
                                 c_resumo, c_pdf = st.columns([3.2, 1])
                                 with c_resumo:
                                     with st.expander("📝 Ler resumo"):
-                                        st.write(resumo)
+                                        st.markdown(destacar_termo(resumo, tema))
                                 with c_pdf:
                                     if link_pdf:
                                         st.link_button("📄 PDF", link_pdf, use_container_width=True)
 
+                                # Expander com a citação ABNT
+                                with st.expander("📜 Copiar citação (ABNT)"):
+                                    st.code(citacao_abnt, language="markdown")
+
+                                # Botões inferiores
                                 c1, c2 = st.columns(2)
                                 with c1:
                                     if link_repositorio:
@@ -234,6 +282,19 @@ if st.button("Buscar Trabalhos", use_container_width=True):
                                         st.link_button("🏛️ Ver Registro na BDTD", link_bdtd, use_container_width=True)
                                 
                                 st.divider()
+
+                        # Botão para exportação dos resultados em CSV
+                        if dados_exportacao:
+                            df = pd.DataFrame(dados_exportacao)
+                            csv_data = df.to_csv(index=False).encode('utf-8')
+                            st.download_button(
+                                label="📥 Baixar Resultados (.csv)",
+                                data=csv_data,
+                                file_name=f"pesquisa_bdtd_{tema.replace(' ', '_')}.csv",
+                                mime="text/csv",
+                                use_container_width=True
+                            )
+
                 else:
                     st.error("Servidor da BDTD indisponível no momento.")
 
