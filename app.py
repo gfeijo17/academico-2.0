@@ -47,19 +47,31 @@ st.markdown(
         background-color: #e8efe6;
     }
 
-    /* Marca d'água "GFS" no canto superior direito */
+    /* Animação CSS para mover a marca d'água da esquerda para a direita */
+    @keyframes moverGfs {
+        0% {
+            transform: translateX(-100px);
+        }
+        100% {
+            transform: translateX(100vw);
+        }
+    }
+
+    /* Elemento da Marca d'água Animada "GFS" */
     .stApp::before {
         content: "GFS";
         position: fixed;
-        top: 15px;
-        right: 30px;
-        font-size: 38px;
+        top: 10px;
+        left: 0;
+        font-size: 32px;
         font-weight: 900;
         font-family: 'Arial Black', sans-serif;
-        color: rgba(60, 90, 65, 0.18);
-        letter-spacing: 3px;
+        color: rgba(60, 90, 65, 0.25);
+        letter-spacing: 4px;
         z-index: 9999;
         pointer-events: none;
+        white-space: nowrap;
+        animation: moverGfs 12s linear infinite;
     }
 
     /* Estilização do Título */
