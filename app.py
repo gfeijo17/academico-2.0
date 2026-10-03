@@ -1,8 +1,30 @@
+import datetime
 import requests
 import urllib.parse
 import streamlit as st
 
 st.set_page_config(page_title="Buscador", page_icon="🎓", layout="centered")
+
+# --- VALORES PADRÃO DA APLICAÇÃO ---
+ANO_ATUAL = datetime.datetime.now().year
+ANO_15_ANOS_ATRAS = ANO_ATUAL - 15
+
+# Inicialização das variáveis no Session State
+if "tema_input" not in st.session_state:
+    st.session_state["tema_input"] = ""
+if "tipo_trabalho_input" not in st.session_state:
+    st.session_state["tipo_trabalho_input"] = "Todos"
+if "limite_input" not in st.session_state:
+    st.session_state["limite_input"] = 20
+if "anos_input" not in st.session_state:
+    st.session_state["anos_input"] = (ANO_15_ANOS_ATRAS, ANO_ATUAL)
+
+def reset_campos():
+    """Restaura todos os controles para os valores padrão."""
+    st.session_state["tema_input"] = ""
+    st.session_state["tipo_trabalho_input"] = "Todos"
+    st.session_state["limite_input"] = 20
+    st.session_state["anos_input"] = (ANO_15_ANOS_ATRAS, ANO_ATUAL)
 
 # --- ESTILIZAÇÃO E CUSTOMIZAÇÃO CSS ---
 st.markdown(
@@ -78,18 +100,21 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# --- CABEÇALHO COM BOTÃO "NOVA PESQUISA" NO CANTO SUPERIOR ESQUERDO ---
+# --- CABEÇALHO COM BOTÃO "NOVA PESQUISA" QUE RESETA OS FILTROS ---
 col_top_left, col_top_right = st.columns([1, 3])
 
 with col_top_left:
-    if st.button("🔄 Nova Pesquisa", use_container_width=True):
-        st.rerun()
+    st.button("🔄 Nova Pesquisa", on_click=reset_campos, use_container_width=True)
 
 st.title("Buscador")
 st.write("Pesquisa de teses e dissertações de pós-graduação ordenadas das mais recentes às mais antigas.")
 
-# Campo de entrada com o destaque em degradê
-tema = st.text_input("Digite o tema desejado:", placeholder="Ex: aprendizagem motora educação física")
+# Campo de entrada vinculado ao session_state
+tema = st.text_input(
+    "Digite o tema desejado:",
+    placeholder="Ex: aprendizagem motora educação física",
+    key="tema_input"
+)
 
 # Controles de filtro em colunas paralelas
 col_filtro, col_qtd = st.columns([2, 1])
@@ -97,22 +122,23 @@ col_filtro, col_qtd = st.columns([2, 1])
 with col_filtro:
     tipo_trabalho = st.selectbox(
         "Tipo de documento:",
-        options=["Todos", "Dissertações de Mestrado", "Teses de Doutorado"]
+        options=["Todos", "Dissertações de Mestrado", "Teses de Doutorado"],
+        key="tipo_trabalho_input"
     )
 
 with col_qtd:
     limite_resultados = st.select_slider(
         "Quantidade de resultados:",
         options=[10, 20, 30, 50],
-        value=20
+        key="limite_input"
     )
 
-# Filtro de Intervalo de Anos
+# Filtro de Intervalo de Anos (padrão: últimos 15 anos)
 ano_inicial, ano_final = st.slider(
     "Intervalo de anos da publicação:",
     min_value=1990,
-    max_value=2026,
-    value=(2010, 2026)
+    max_value=ANO_ATUAL,
+    key="anos_input"
 )
 
 if st.button("Buscar Trabalhos", use_container_width=True):
