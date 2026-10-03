@@ -9,7 +9,6 @@ st.set_page_config(page_title="Buscador", page_icon="🎓", layout="centered")
 ANO_ATUAL = datetime.datetime.now().year
 ANO_15_ANOS_ATRAS = ANO_ATUAL - 15
 
-# Inicialização das variáveis no Session State
 if "tema_input" not in st.session_state:
     st.session_state["tema_input"] = ""
 if "tipo_trabalho_input" not in st.session_state:
@@ -44,7 +43,7 @@ st.markdown(
         font-size: 38px;
         font-weight: 900;
         font-family: 'Arial Black', sans-serif;
-        color: rgba(60, 90, 65, 0.15); /* Verde musgo com opacidade leve */
+        color: rgba(60, 90, 65, 0.15);
         letter-spacing: 3px;
         z-index: 9999;
         pointer-events: none;
@@ -72,7 +71,7 @@ st.markdown(
         font-weight: 500 !important;
     }
 
-    /* Padronização Unificada de Todos os Botões (Standard e Link Buttons) */
+    /* Padronização Unificada de Todos os Botões */
     div.stButton > button,
     div[data-testid="stLinkButton"] > a,
     a[data-testid="stBaseButton-secondary"] {
@@ -96,7 +95,6 @@ st.markdown(
         box-shadow: 0 4px 8px rgba(0,0,0,0.15) !important;
     }
 
-    /* Ajuste para alinhar verticalmente o botão PDF com o expander do resumo */
     div[data-testid="stColumn"] {
         display: flex;
         align-items: flex-start;
@@ -115,14 +113,12 @@ with col_top_left:
 st.title("Buscador")
 st.write("Pesquisa de teses e dissertações de pós-graduação ordenadas das mais recentes às mais antigas.")
 
-# Campo de entrada vinculado ao session_state
 tema = st.text_input(
     "Digite o tema desejado:",
     placeholder="Ex: aprendizagem motora educação física",
     key="tema_input"
 )
 
-# Controles de filtro em colunas paralelas
 col_filtro, col_qtd = st.columns([2, 1])
 
 with col_filtro:
@@ -139,7 +135,6 @@ with col_qtd:
         key="limite_input"
     )
 
-# Filtro de Intervalo de Anos (padrão: últimos 15 anos)
 ano_inicial, ano_final = st.slider(
     "Intervalo de anos da publicação:",
     min_value=1990,
@@ -161,7 +156,6 @@ if st.button("Buscar Trabalhos", use_container_width=True):
 
                 query_encoded = urllib.parse.quote(termo_busca)
                 
-                # API da BDTD
                 url = (
                     f"https://bdtd.ibict.br/vufind/api/v1/search?"
                     f"lookfor={query_encoded}&sort=publishDate+desc&limit={limite_resultados}"
@@ -183,19 +177,16 @@ if st.button("Buscar Trabalhos", use_container_width=True):
                         for i, trabalho in enumerate(registros, start=1):
                             titulo = trabalho.get("title", "Título indisponível")
                             
-                            # Autores
                             autores_raw = trabalho.get("authors", {})
                             autores_list = autores_raw.get("primary", {})
                             autores = ", ".join(autores_list.keys()) if autores_list else "Autor não informado"
 
-                            # Ano e Instituição
                             anos = trabalho.get("publicationDates", ["Ano não informado"])
                             ano = anos[0] if anos else "N/A"
                             
                             instituicao_raw = trabalho.get("institutions", ["Instituição não informada"])
                             instituicao = instituicao_raw[0] if instituicao_raw else ""
 
-                            # Resumo
                             resumo_raw = trabalho.get("summary", [])
                             if isinstance(resumo_raw, list) and resumo_raw:
                                 resumo = resumo_raw[0]
@@ -204,32 +195,28 @@ if st.button("Buscar Trabalhos", use_container_width=True):
                             else:
                                 resumo = "Resumo não disponibilizado no registro."
 
-                            # Links
                             id_trabalho = trabalho.get("id")
                             link_bdtd = f"https://bdtd.ibict.br/vufind/Record/{id_trabalho}" if id_trabalho else None
                             
                             urls = trabalho.get("urls", [])
                             link_repositorio = urls[0].get("url") if urls else link_bdtd
 
-                            # Identifica URL direta do arquivo PDF se disponível
+                            # --- LÓGICA DE EXTRAÇÃO DO PDF DIRETO ---
                             link_pdf = None
                             for u in urls:
                                 u_str = u.get("url", "")
-                                if u_str.lower().endswith(".pdf") or "pdf" in u_str.lower():
+                                u_lower = u_str.lower()
+                                if u_lower.endswith(".pdf") or "bitstream" in u_lower or "/download" in u_lower:
                                     link_pdf = u_str
                                     break
                             
-                            # Caso não haja URL explícita com extensão .pdf, usa o repositório como fallback
                             if not link_pdf:
                                 link_pdf = link_repositorio
 
-                            # Exibição do Card
                             with st.container():
                                 st.markdown(f"### {i}. [{titulo}]({link_repositorio})")
                                 st.caption(f"📅 **Ano:** {ano} | 👤 **Autor:** {autores} | 🏛️ **Instituição:** {instituicao}")
                                 
-                                # Linha do Resumo com o botão de PDF integrado
-                                # A proporção [3.2, 1] garante que o botão fique perfeitamente alinhado na extremidade direita
                                 c_resumo, c_pdf = st.columns([3.2, 1])
                                 with c_resumo:
                                     with st.expander("📝 Ler resumo"):
@@ -238,7 +225,6 @@ if st.button("Buscar Trabalhos", use_container_width=True):
                                     if link_pdf:
                                         st.link_button("📄 PDF", link_pdf, use_container_width=True)
 
-                                # Botões de acesso aos materiais na parte inferior
                                 c1, c2 = st.columns(2)
                                 with c1:
                                     if link_repositorio:
