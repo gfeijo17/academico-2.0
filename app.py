@@ -32,6 +32,7 @@ st.markdown(
     h1 {
         color: #2d4a34 !important;
         font-weight: 700;
+        margin-top: 0px !important;
     }
 
     /* Campo de entrada de texto destacado com degradê verde */
@@ -77,7 +78,13 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# --- INTERFACE ---
+# --- CABEÇALHO COM BOTÃO "NOVA PESQUISA" NO CANTO SUPERIOR ESQUERDO ---
+col_top_left, col_top_right = st.columns([1, 3])
+
+with col_top_left:
+    if st.button("🔄 Nova Pesquisa", use_container_width=True):
+        st.rerun()
+
 st.title("Buscador")
 st.write("Pesquisa de teses e dissertações de pós-graduação ordenadas das mais recentes às mais antigas.")
 
@@ -108,7 +115,7 @@ ano_inicial, ano_final = st.slider(
     value=(2010, 2026)
 )
 
-if st.button("Buscar Trabalhos"):
+if st.button("Buscar Trabalhos", use_container_width=True):
     if not tema.strip():
         st.warning("Por favor, digite um tema.")
     else:
