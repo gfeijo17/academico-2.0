@@ -49,7 +49,7 @@ st.markdown(
         font-weight: 500 !important;
     }
 
-    /* Personalização do Botão */
+    /* Personalização do Botão Principal (Buscar Trabalhos) */
     div.stButton > button {
         background-color: #3b5e43 !important;
         color: white !important;
@@ -62,6 +62,22 @@ st.markdown(
     div.stButton > button:hover {
         background-color: #2c4732 !important;
         box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+
+    /* Padronização dos Botões de Link (Abrir Repositório / Ver Registro BDTD) */
+    a[data-testid="stLinkButton"] {
+        background-color: #3b5e43 !important;
+        color: white !important;
+        border-radius: 8px !important;
+        border: none !important;
+        font-weight: 600 !important;
+        text-align: center !important;
+        transition: all 0.3s ease !important;
+    }
+
+    a[data-testid="stLinkButton"]:hover {
+        background-color: #2c4732 !important;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15) !important;
     }
     </style>
     """,
@@ -147,6 +163,15 @@ if st.button("Buscar Trabalhos"):
                             instituicao_raw = trabalho.get("institutions", ["Instituição não informada"])
                             instituicao = instituicao_raw[0] if instituicao_raw else ""
 
+                            # Resumo (summary)
+                            resumo_raw = trabalho.get("summary", [])
+                            if isinstance(resumo_raw, list) and resumo_raw:
+                                resumo = resumo_raw[0]
+                            elif isinstance(resumo_raw, str):
+                                resumo = resumo_raw
+                            else:
+                                resumo = "Resumo não disponibilizado no registro."
+
                             # Links correlatos
                             id_trabalho = trabalho.get("id")
                             link_bdtd = f"https://bdtd.ibict.br/vufind/Record/{id_trabalho}" if id_trabalho else None
@@ -159,6 +184,10 @@ if st.button("Buscar Trabalhos"):
                                 st.markdown(f"### {i}. [{titulo}]({link_direto})")
                                 st.caption(f"📅 **Ano:** {ano} | 👤 **Autor:** {autores} | 🏛️ **Instituição:** {instituicao}")
                                 
+                                # Bloco expandível com o resumo
+                                with st.expander("📝 Ler resumo"):
+                                    st.write(resumo)
+
                                 # Botões de acesso aos materiais correlatos
                                 c1, c2 = st.columns(2)
                                 with c1:
